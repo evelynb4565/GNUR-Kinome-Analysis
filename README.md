@@ -6,4 +6,9 @@ R Markdown files include specific paths that will not apply to other users. Plea
 
 Please be sure to download the KRSA package before attemping use of this repository: https://github.com/CogDisResLab/KRSA
 
+Kinase phylogeny trees were created using CORAL. Both the web-based version and developers version are listed here: 
+
+  Website: http://phanstiel-lab.med.unc.edu/CORAL/
+  Github: https://github.com/dphansti/CORAL
+
 Any inquires on how the data was processed or how to reproduce this analysis should be sent to: eaba240@uky.edu
