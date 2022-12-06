@@ -1,0 +1,964 @@
+---
+title: "![](~/Library/CloudStorage/OneDrive-UniversityofKentucky/Uni of Kentucky/Kinome_PamGene/Dr Stec/PTK/images/Pathways Core with UK logo.png){width=5in}"
+author: "The Hinds Laboratory Pathways Core"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo=FALSE,
+  message = FALSE
+)
+
+options(tinytex.verbose = TRUE)
+
+```
+
+```{r setup}
+library(KRSA)
+library(knitr)
+library(tidyverse)
+library(gt) # can be used to view tables
+library(furrr) # can be used for parallel computing 
+```
+
+ 
+```{r eval-TRUE, echo=FALSE, include=FALSE}
+
+###CHANGE THESE VARIABLES FOR EACH RUN
+##This report only contains one comparsion. You can add more than one comparison by creating a chunk identical to this one but with the input group names changed to the comparison of interest. The kinases of interest will likely change as well.
+
+#paths for input files
+
+input_directory_MedianSigmBg <- "~/Library/CloudStorage/OneDrive-UniversityofKentucky/Uni of Kentucky/Kinome_PamGene/Dr Stec/PTK/input_data/_Export_Median_SigmBg_220724140300.txt"
+
+input_directory_Signal_Saturation <- "~/Library/CloudStorage/OneDrive-UniversityofKentucky/Uni of Kentucky/Kinome_PamGene/Dr Stec/PTK/input_data/_Export_Signal_Saturation_220724140300.txt"
+
+#experiment_ID
+
+#experiment_ID
+
+experiment_ID <- "Dr_Stec_RNAi_Ugt1a1_v_RNAi_VEH_PTK"
+
+#comparison variables
+
+name_in_input_groupA <- "Ugt1a1 RNAi"
+shorthand_groupA <- "exp"
+name_in_input_groupB <- "RNAi VEH"
+shorthand_groupB <- "ctrl"
+
+#chip type
+
+chip_type <- "PTK"
+
+#list kinases of interest
+
+kinases_of_interest <-c("ZAP70", "Syk", "FRK", "BLK", "Brk", "Src", "LTK", "Ron", "HER3", "Tyro3/Sky", "Ret", "Met", "Srm", "Fes", "HCK", "BTK", "IGF1R", "HER4", "FGFR1", "RYK", "Arg", "Yes", "Lck", "Abl", "HER2")
+
+
+
+```
+
+```{r eval-FALSE, include=FALSE}
+
+#sample column name
+sample <- "SampleName"
+
+#group name
+group <- "Barcode"
+
+#identification variables
+comparison <- paste0(shorthand_groupA, "-v-", shorthand_groupB)
+
+#directories
+EAB_directory_output <- "eab_output/"
+EAB_directory_output_experiment_ID <- paste0(EAB_directory_output, experiment_ID, "/")
+EAB_directory_output_whole <- paste0(EAB_directory_output_experiment_ID, "whole", "/")
+EAB_directory_output_comparison <- paste0(EAB_directory_output_experiment_ID, comparison, "/")
+EAB_directory_output_comparison_families <- paste0(EAB_directory_output_experiment_ID, comparison, "/", "families", "/")
+EAB_directory_output_comparison_per <- paste0(EAB_directory_output_experiment_ID, comparison, "/", "per", "/")
+
+if (dir.exists(EAB_directory_output)==F){dir.create(EAB_directory_output)}
+if (dir.exists(EAB_directory_output_experiment_ID)==F){dir.create(EAB_directory_output_experiment_ID)}
+if (dir.exists(EAB_directory_output_whole)==F){dir.create(EAB_directory_output_whole)}
+if (dir.exists(EAB_directory_output_comparison)==F){dir.create(EAB_directory_output_comparison)}
+if (dir.exists(EAB_directory_output_comparison_families)==F){dir.create(EAB_directory_output_comparison_families)}
+if (dir.exists(EAB_directory_output_comparison_per)==F){dir.create(EAB_directory_output_comparison_per)}
+
+
+
+
+```
+ 
+
+\newpage
+
+# Introduction
+
+## Background
+
+The Pamstation12 instrument provides a profiling of kinase activity of cell or tissue samples. The device is loaded with either serine/threonine or tyrosine microarray chips. Each chip has 4 wells for up to four samples, and 3 chips total can be loaded per run. The microarray represents 144 (STK chip) or 196 (PTK chip) reporter peptides that can be phosphorylated by serine/threonine or tyrosine kinases. Using fluorescently labeled antibodies, the PamStation12 measures the degree of the phosphorylation in real time by detecting at different exposure times. The list of peptides present in each microarray can be viewed here: 
+[STK chip](https://pamgene.com/wp-content/uploads/2020/09/STK-144-PamChip-87102.pdf),
+[PTK chip](https://pamgene.com/wp-content/uploads/2020/09/PTK-196-PamChip-86402.pdf)
+
+\newpage
+
+```{r, echo=F,out.width = "400px",out.width="450px", fig.align='center', cache=TRUE}
+knitr::include_graphics("~/Library/CloudStorage/OneDrive-UniversityofKentucky/Uni of Kentucky/Kinome_PamGene/John_FoxS/images/pamgene_workflow.png")
+knitr::include_graphics("~/Library/CloudStorage/OneDrive-UniversityofKentucky/Uni of Kentucky/Kinome_PamGene/John_FoxS/images/pamgene_detectionFig.png")
+```
+\newpage
+
+# Results
+
+## Image Analysis
+
+After the PamStation12 run is completed, the first step in data analysis is using BioNavigator, PamGene's proprietary software, to analyze the images produced from each cycle. For each picture, the user must view the microarray to ensure the correct placement of the superimposed grid used to quantify peptide fluorescence. As each spot on the microarray represents a specific group of peptides used to determine the identify of kinases, it is imperative that this step be completed with detail. After the viewing and correction of grids, these images are summarized and quantified using PamGrid, which provides a numeric values using the median value of fluorescence minus the median value of the background pixels. The resulting file, and most important for further KRSA and UKA analysis, is the median signal minus background file (Median_SigmBg). 
+
+
+## Reading Data
+
+First, two BioNavigator files are uploaded: Median_SigmBg and Signal_Saturation. These files are read into the environment and cleaned to a tidy format for further analysis, which involves modeling and visualization. To continue with further analysis, we will define the chip type (STK or PTK). 
+
+
+```{r readData, include=T, cache=TRUE}
+
+# Define chip type. STK or PTK
+chipType <- chip_type
+
+# Read crosstab view bionavigator files and tidy data
+data <- krsa_read(input_directory_MedianSigmBg, input_directory_Signal_Saturation)
+
+#names(data)[names(data) == paste0(group)] <- "Group"
+
+```
+
+## QC Initial Steps and Groups Assignments
+
+The Signal_Saturation file is used for quality control, which is used to adjust the negative values in the Median_SigmBg file. Additionally, a new column is defined to group the existing variables. This combines the Sample Name and Barcode are combined for a unique identifier. Finally, the end point signal values at the max exposure time are extracted. 
+
+
+```{r qcSteps, include=T, cache=TRUE}
+# qc processing
+krsa_qc_steps(data) -> data
+
+# Define sample groups
+data %>% mutate(Group = SampleName, SampleName = paste0(SampleName,"_" ,Barcode)) -> data
+
+# extract end level signal values @ all max exposure time (200ms)
+krsa_extractEndPointMaxExp(data, chipType) -> data_pw_200
+
+# extract end level signal values end level @ all exposure times
+krsa_extractEndPoint(data, chipType) -> data_pw 
+
+
+```
+
+## QC Steps and Model Fitting
+
+The peptides with the lowest signals are filtered out. A simple linear regression model is used to fit the multiple exposure time values into a single value. We accomplish this using the Median_SigmBg as a function of the exposure time. The slope of the model fit and $R^2$ are employed for quality control step and for samples comparison. The slope is multiplied by 100 and log2 transformed. The peptides with a poor linear fit and reference peptides are filtered out. 
+
+
+```{r model, warning=F,include=T, cache=TRUE}
+
+# Filter out peptides with low signals
+krsa_filter_lowPeps(data_pw_200, 5) -> ppPassAll
+
+# Fit the linear model
+# This will produce a list of data frames:
+# scaled: the Slope_Transformed values (see above for more info on Slope_Transformed)
+# normalized: the Slope_Transformed values but normalized by Chip/Barcode
+# Grouped: The mean of Slope_Transformed values for all samples within a group
+krsa_scaleModel(data_pw,unique(data_pw$Peptide)) -> data_modeled
+
+  
+
+# Filter out peptides weak linear fit
+krsa_filter_nonLinear(data_modeled$scaled %>% filter(Peptide %in% ppPassAll), 0.8) -> ppPassR2
+
+# Filter out reference peptides
+krsa_filter_ref_pep(ppPassR2) -> new_pep
+
+
+```
+
+## Global Signal Intensity
+
+The slope transformed values are used for global signal intensity determination across samples and groups. We will create CV and violin plots, and create heatmaps to visualize our fitted data. 
+
+### Global CV Plots
+
+We will plot the coefficient of variation on both the normal and normalized fits. This will help us to identify groups with high variation that could be explained by sample outliers.
+
+```{r cvPlot, echo=F,fig.height=8, fig.width=8, fig.align="center", cache=TRUE}
+
+# Plot a CV figure using the modeled scaled data
+krsa_cv_plot(data_modeled$scaled, new_pep)
+
+# Plot a CV figure using the modeled normalized data
+krsa_cv_plot(data_modeled$normalized, new_pep)
+```
+
+### Global Violin Plots
+
+Violin plots will help us to examine the global signal differences between the groups/samples. 
+
+```{r violinPlot, echo=F,fig.height=8, fig.width=8, fig.align="center", cache=TRUE}
+# Plot a violin figure and facet by the (Group) variable
+krsa_violin_plot(data_modeled$scaled, new_pep, "Group")
+
+# Plot a violin figure and facet by the (Barcode) variable
+krsa_violin_plot(data_modeled$scaled, new_pep, "Barcode")
+
+# Plot a grouped violin figure
+krsa_violin_plot_grouped(data_modeled$scaled, new_pep)
+
+```
+
+### Global Heatmaps
+
+The global heatmap represents all peptides present on the chip, with the postive/internal controls removed. The peptides that failed to pass quality control are also removed. The heatmaps shown below are scaled by row to highlight the similar/different peptide signals across the samples. Unsupervised hierarchial clustering is used on both peptides and samples to highlight potentially similar peptide signal signatures. 
+
+
+```{r heatmapPlot, echo=F,fig.height=8, fig.width=8, fig.align="center", cache=TRUE}
+
+# Generates a heatmap using the modeled scaled data
+krsa_heatmap(data_modeled$scaled, new_pep, scale = "row")
+
+# Generates a heatmap using the modeled normalized data
+krsa_heatmap(data_modeled$normalized, new_pep, scale = "row")
+
+# Generates a heatmap using the modeled grouped data
+krsa_heatmap_grouped(data_modeled$grouped, new_pep, scale = "row")
+
+
+```
+
+## Group Comparison
+
+We can also compare the differential peptide signals between samples/groups. For this report, the two group comparsion is: 
+
+-   **RNAi Ugt1a1 vs RNAi VEH**
+
+The *Slope_Transformed* ratio between each group, paired by chip, is calculated to the fold change. Based on the fold change, peptides that pass a certain fold change threshold are considered significant hits. Also, quality control steps applied in each comparison to filter out peptides that do not reach specific criteria:
+
+-   The *Median_SigmBg* at max exposure *200ms* must be above a certain value\
+-   $R^2$ of the linear model fit must be above a threshold value
+
+These *Filtering Parameters* (fold change threshold, QC criteria) can be modified to adjust the stringency of the analysis. The *Filtering Parameters* that are used for this analysis:
+
+-   The *Median_SigmBg* at max exposure *200ms* must be equal or above 5\
+-   $R^2$ of the linear model fit must be above or equal 0.9\
+-   Log fold change (LFC) cutoffs at (0.2,0.3,0.4)
+
+```{r groupDiff,echo=F, fig.height=8,fig.width=8,fig.align="center", cache=TRUE}
+
+# Define Groups to be compared
+
+comparisons <- list(Comp1 = c(paste0(name_in_input_groupA), paste0(name_in_input_groupB)))
+
+# This function will run both QC steps (krsa_filter_lowPeps, krsa_filter_nonLinear) and krsa_filter_ref_pep
+krsa_quick_filter(data = data_pw_200, data2 = data_modeled$scaled,
+    signal_threshold = 5, r2_threshold = 0.8,
+    groups = comparisons$Comp1) -> pep_passed_qc
+
+# This function calculates log2 fold change values between the defined groups
+# The byChip argument lets you calculates the log2 fold change the results within each chip
+# Barcodes = c(710374209, 710374213, 710374211)
+krsa_group_diff(data_modeled$scaled, comparisons$Comp1, pep_passed_qc, byChip = T) -> diff_df
+
+# save LFC table
+#diff_df %>% write_delim(diff_df, paste0(EAB_directory_output_comparison_per,Sys.Date(),"-", "LFC_df.txt"), delim = "\t")
+
+# Extract top peptides based on the LFC cutoff using average of LFCs across chips
+krsa_get_diff(diff_df,totalMeanLFC ,c(0.2,0.3,0.4)) %>% list("meanLFC" = .) -> sigPeps
+
+# Extract top peptides based on the LFC cutoff using average of LFCs across chips with a standard deviation cutoff (sd_thr). in this example the sd_thr is set as 0.5 but that could be adjusted by user (uncomment next line to account for LFC sd)
+# krsa_get_diff(diff_df,totalMeanLFC ,c(0.2,0.3), sd_thr = 0.5) %>% list("meanLFC" = .) -> sigPeps
+
+# Extract top peptides based on the LFC cutoff using per chip LFCs
+krsa_get_diff_byChip(diff_df, LFC, c(0.2,0.3,0.4)) -> sigPepsPerChip
+
+# Combine the peptides hits in one list
+sigPeps_total <- list(sigPeps, sigPepsPerChip) %>% unlist(recursive = F) %>%  unlist(recursive = F)
+
+
+```
+
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Heatmap)
+
+After applying the *Filtering Parameters* for this group comparison, only *`r length(sigPeps$meanLFC[["0.2"]])`* peptides carried forward in the analysis (i.e. *`r length(sigPeps$meanLFC[["0.2"]])` hits*). Below are some figures to visualize the differences between these samples for considering these *hits*.
+
+```{r heatmapInd,echo=F, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+
+# generates a heatmap using the selected groups and peptides
+krsa_heatmap(data_modeled$normalized, sigPeps$meanLFC$`0.2`, groups = comparisons$Comp1, scale = "row")
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Violin Plot)
+
+```{r violinIndPlot,echo=F, fig.align="center", fig.height=8, fig.width=8, cache=TRUE, message=FALSE}
+# generates a violin plot using the selected groups and peptides
+krsa_violin_plot(data_modeled$scaled, sigPeps$meanLFC$`0.2`, "Barcode", groups = comparisons$Comp1)
+
+# generate a grouped violin/boxplot plot using the selected groups and peptides with more options, like a statistical test. check krsa_violin_plot_grouped() arguments for more options
+krsa_violin_plot_grouped(data_modeled$scaled, sigPeps$meanLFC$`0.2`, comparisons, 
+                         dots = F,
+                         groups = comparisons$Comp1, avg_line = T)
+
+
+krsa_violin_plot_grouped(data_modeled$grouped, sigPeps$meanLFC$`0.2`, comparisons, 
+                         test = F, 
+                         groups = comparisons$Comp1, avg_line = T)
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Waterfall Plot)
+
+This waterfall represents the log2 fold changes between the two groups at each peptide.
+
+```{r waterfall, echo=F, fig.align="center", fig.height=8,fig.width=8, cache=TRUE}
+# generates a waterfall of the log2 fold change values for the selected peptide (top peptides)
+krsa_waterfall(diff_df, lfc_thr = 0.2, byChip = T)
+
+# generates a waterfall of the log2 fold change values for the selected peptide (top peptides) with a standard deviation cutoff (sd_thr). This is just for the waterfall not the actual upstream kinase analysis (that must be set with the krsa_get_diff function)
+krsa_waterfall(diff_df, lfc_thr = 0.2, byChip = T, sd_thr = 0.5)
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Curve Plot)
+
+We generate curves plots per peptide using the last cycle data to visualize the linear fit model
+
+```{r curvePlot, echo=F,fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+# generates a curve plot representing the linear model fit for the selected peptide (top peptides, only showing 10 here)
+krsa_curve_plot(data_pw, sigPeps$meanLFC$`0.2`[1:10], groups = comparisons$Comp1)
+```
+
+### RNAi Ugt1a1 vs RNAi VEH (Upstream Kinase Analysis (UKA) - Kinase Families)
+
+The Cognitive Disorders Research Laboratory (CDRL) carefully curated and mapped the kinases that can act and phosphorylate each peptide present on the chip. This was achieved by using multiple sources including GPS 3.0, Kinexus Phosphonet, PhosphoELM and PhosphoSite Plus. Based on that association between peptides and kinases, a random sampling analysis is performed for these hits. The basic idea of *KRSA* is: For each iteration (*2000* iterations performed in this analysis), the same number of hits are randomly selected from the total 141/or 193 peptides present on the chip. This process can be likened to "boostrapping", which refers to repeated simulated sampling to determine significance of observed results. Predicted kinases are then mapped to this sample list of peptides and number of kinases are determined. The kinase count from the actual hits and random sampling is then compared to determine the significance. The first version of this random sampling will look at kinases grouped by their relative families. 
+
+```{r krsa, echo=F, warning=F, message=FALSE, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+
+
+# load in chip coverage and kinase-substrate files OR upload your own files
+# if PTK chip, use:
+#chipCov <- KRSA_coverage_PTK_PamChip_86402_v1
+#KRSA_file <- KRSA_Mapping_PTK_PamChip_86402_v1
+
+# STK chip
+#chipCov <- KRSA_coverage_STK_PamChip_87102_v2
+#KRSA_file <- KRSA_Mapping_STK_PamChip_87102_v1
+
+if(chipType == "STK"){chipCov <- KRSA_coverage_STK_PamChip_87102_v1}
+if(chipType == "STK"){KRSA_file <- KRSA_Mapping_STK_PamChip_87102_v1}
+if(chipType == "PTK"){chipCov <- KRSA_coverage_PTK_PamChip_86402_v1}
+if(chipType == "PTK"){KRSA_file <- KRSA_Mapping_PTK_PamChip_86402_v1}
+
+# run the KRSA function to do the random sampling analysis, set seed that can be used later to reproduce results, and choose number of iterations
+krsa(sigPeps$meanLFC$`0.2`, return_count = T, seed = 123, itr = 2000,
+     map_file = KRSA_file, cov_file = chipCov) -> fin
+
+# View the Z score table
+kable(head(fin$KRSA_Table,25), digits = 3)
+
+# to save file
+fin$KRSA_Table %>% write_delim(paste0(EAB_directory_output_comparison_per,Sys.Date(),"-", "acrossChip_KRSA_FullTable_Families_comp1.txt"), delim = "\t")
+
+# find top and bottom kinases
+bothways <- c(pull(head(fin$KRSA_Table, 10), Kinase), pull(tail(fin$KRSA_Table, 10), Kinase))
+
+# Use these kinase to generate histogram plots for each selected kinase
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, bothways)
+
+
+# For parallel computing, load the furrr package:
+# opens multiple R sessions to run faster
+plan(multisession)
+
+# Run the KRSA function across the different sets of peptides using the furrr package for parallel computing
+future_map(sigPeps_total, krsa) -> mutiple_krsa_outputs
+
+
+# For none parallel computing:
+# Run KRSA function across the different sets of peptides
+#map(sigPeps_total, krsa) -> mutiple_krsa_outputs
+
+# Tidy output
+df <- data.frame(matrix(unlist(mutiple_krsa_outputs), ncol = max(lengths(mutiple_krsa_outputs)), byrow = TRUE))
+df <- setNames(do.call(rbind.data.frame, mutiple_krsa_outputs), names(mutiple_krsa_outputs$meanLFC.0.2))
+
+df %>% rownames_to_column("method") %>% select(Kinase, Z, method) %>% 
+  mutate(method = str_extract(method, "\\w+\\.\\w+\\.\\w+")) %>% 
+  mutate(method = gsub("(^\\w+)[\\.]", "\\1>", method)) %>% 
+  mutate_if(is.numeric, round, 2) -> df
+
+df %>% 
+  pivot_wider(names_from = method, values_from = Z) -> df2
+  
+# Generates a table of the Z scores across the different sets of peptides
+# df2 %>% 
+#   gt() %>% tab_spanner_delim(delim = ">")
+
+# Creates an average Z score table using the across chip analysis
+df %>% 
+  filter(grepl("mean", method)) %>% 
+  select(Kinase, Z, method) %>% group_by(Kinase) %>% mutate(AvgZ = mean(Z)) -> AvgZTable
+
+# save file
+AvgZTable %>% write_delim(paste0(EAB_directory_output_comparison_per,Sys.Date(),"-", "acrossChip_KRSA_Table_comp1.txt"), delim = "\t")
+
+# Creates an average Z score table using the within chip analysis
+df %>% 
+  filter(!grepl("mean", method)) %>% 
+  select(Kinase, Z, method) %>% group_by(Kinase) %>% mutate(AvgZ = mean(Z)) -> AvgZTable2
+
+# save file
+AvgZTable %>% write_delim(paste0(EAB_directory_output_comparison_per,Sys.Date(),"-","withinChip_KRSA_Table_comp1.txt"), delim = "\t")
+
+# Extract top kinases based on abs(Z) score
+krsa_top_hits(AvgZTable2, .5) -> kinases_hits
+
+#krsa_top_hits(AvgZTable2, 1.75)
+krsa_top_hits(AvgZTable2, 1.5)
+
+# Show the number of peptides per each set in atable
+krsa_show_peptides(sigPeps_total)
+
+```
+
+```{r save Peacock Plots- Kinase Families, echo=F, warning=F, message=FALSE, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+#This will change per run and creates the peacock plots for the families of kinases
+
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, bothways)
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig1-SYK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "SYK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig2-TRK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "TRK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig3-ACK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "ACK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig4-SRC","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "SRC")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig5-TEC","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "TEC")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig6-RYK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "RYK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig7-ABL","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "ABL")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison_families, "Fig8-DDR","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "DDR")
+dev.off()
+
+```
+
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Reverse KRSA Plot)
+
+We will use the reverse KRSA plot function, to plot the log2 fold chnage values for all peptides mapped to kinase hits. This will help us examine the activity of the kinase
+
+```{r revKRSAPlot, echo=F, warning=F, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+
+# plot the reverse KRSA figure for top kinases to determine their activity levels
+krsa_reverse_krsa_plot(chipCov, diff_df, kinases_hits, 0.2, byChip = T)
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Coverage Plot)
+
+To view the coverage of kinases across the full list of peptides on the chip, we will use the coverage plot function
+
+```{r covPlot, echo=F, fig.align="center", fig.height=10,fig.width=8, cache=TRUE}
+
+# generates a kinase coverage plot 
+krsa_coverage_plot(chipCov, AvgZTable2, chipType)
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Ball Model Network)
+
+We will view the ball model network function, to generate a model representing the protein-protein interactions between kinases
+
+```{r netPlot, echo=F, fig.align="center", fig.height=10,fig.width=8, message=FALSE, cache=TRUE}
+
+# Plot the network ball model
+krsa_ball_model(kinases_hits, AvgZTable2, 10, 2.5, 4.8)
+
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Upstream Kinase Analysis (UKA) - Individual Kinases)
+
+We also apply the same bootstrapping/random sampling analysis to the individual kinases identified as over/under active in the UKA kinase family analysis. Instead of using mapping files that group kinases by family, we use PamGene's carefully curated individual kinase list, which details all of the known peptides in which each kinase phosphorylates. This page marks the beginning of individual kinase analysis. 
+
+```{r perkrsamapping, echo=F, warning=F, message=FALSE, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+
+
+###Load data and map
+lfc_tbl <- diff_df
+#alternatively lfc table may also be loaded
+#lfc_tbl <- read_delim("comp1_LFC_df.txt", delim = "\t")
+
+uka_mp <- readRDS("~/Library/CloudStorage/OneDrive-UniversityofKentucky/Uni of Kentucky/Kinome_PamGene/John_FoxS/KRSA_Reports/data-raw/uka_map_db.RDS")
+
+uka_mp %>% distinct(.keep_all = T) %>% 
+  mutate_if(is.factor, as.character) %>% 
+  filter(family == paste0(chipType)) %>% 
+  select(Kinase_Name, ID, Kinase_Rank) %>% 
+  rename(Kin = Kinase_Name, Substrates = ID) -> processed_uka_map
+#Justin changed this ^ (rename(Kin = Kinase_Name, Substrates = ID) -> processed_uka_map)
+
+processed_uka_map %>% 
+  group_by(Kin, Substrates) %>% 
+  mutate(minRank = min(Kinase_Rank)) %>% 
+  mutate(`Mapping Confidence` = case_when(
+    minRank == 0 ~ "High", 
+    minRank >= 1 & minRank <= 6  ~ "Medium",
+    minRank > 6 ~ "Low"
+  ),  `Mapping Confidence` = factor(`Mapping Confidence`, levels = c("High", "Medium", "Low"))) -> processed_uka_map
+
+
+# join lfc table and uka mapping table
+left_join(diff_df, processed_uka_map, by = c("Peptide" = "Substrates")) -> mapped_lfc_table
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Waterfall Plot)
+
+This waterfall represents the log2 fold changes between the two groups at each peptid for each selected kinase.
+
+```{r perKRSAwaterfall, echo=F, fig.align="center", fig.height=8,fig.width=8, cache=TRUE, results='asis'}
+
+# generates a waterfall of the log2 fold change values for the selected peptide (top peptides)
+#krsa_waterfall(diff_df, 0.2, byChip = T)
+
+#might have to make separate chunks to produce these in the right size for reading. 
+#for now, just change the number in the kinases of interest. 2 waterfall plots will be generated at once depending on the order by which you listed the kinases in the variable definition section
+# waterfall plot 
+  mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[1:2]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[3:4]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[5:6]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[7:8]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[9:10]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[11:12]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[13:14]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[15:16]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[17:18]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[19:20]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[21:22]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[23:24]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+mapped_lfc_table %>% 
+  # choose kinase to plot
+  filter(Kin %in% kinases_of_interest[25]) %>% 
+  krsa_waterfall(0.2) +
+  facet_wrap(~Kin, scales = "free_y")
+
+
+```
+
+```{r perpeptidePlot, echo=F, fig.align="center", fig.height=8,fig.width=8, cache=TRUE}
+
+# per peptide plot with color representing kinase rank  
+# mapped_lfc_table %>% 
+#   filter(Kin %in% kinases_of_interest[1]) %>% 
+#   ggplot(aes(LFC, reorder(Peptide, totalMeanLFC))) +
+#   geom_vline(xintercept = 0) +
+#   geom_line(aes(color = `Mapping Confidence`), size = 2) +
+#   geom_point() +
+#   geom_point(aes(totalMeanLFC, reorder(Peptide, totalMeanLFC)), size = 1.5) +
+#   facet_wrap(~Kin, scales = "free_y") +
+#   labs(y = NULL) +
+#   theme(
+#   legend.title = element_text(size = 8),
+#   legend.text = element_text(size = 5), 
+#   legend.key.size = unit(0.2, "cm"), 
+#   axis.text.y = element_text(size = 3)
+#   )
+
+```
+
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Upstream Kinase Analysis - Individual Kinases)
+
+The following analysis applies the same UKA methodology but on individual kinases. The same kinases shown in the waterfall plots will be included as peacock plots in the following random sampling analysis. 
+
+
+```{r perkrsa, echo=F, warning=F, message=FALSE, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+
+
+# load in chip coverage and kinase-substrate files OR upload your own files
+# define coverage and mapping based on chiptype
+if(chipType == "STK"){chipCov <- KRSA_coverage_STK_PamChip_87102_v1}
+if(chipType == "STK"){KRSA_file <- KRSA_Mapping_STK_PamChip_87102_v1}
+if(chipType == "PTK"){chipCov <- KRSA_coverage_PTK_PamChip_86402_v1}
+if(chipType == "PTK"){KRSA_file <- KRSA_Mapping_PTK_PamChip_86402_v1}
+
+
+# run the KRSA function to do the random sampling analysis, set seed that can be used later to reproduce results, and choose number of iterations
+krsa(sigPeps$meanLFC$`0.2`, return_count = T, seed = 123, itr = 2000,
+     map_file = KRSA_file, cov_file = distinct(processed_uka_map,Kin,Substrates,.keep_all = T)) -> fin
+
+
+
+## ^ need a new processed_uka_map that has duplicate peptides filtered out
+
+#krsa(sigPeps$meanLFC$`0.2`, return_count = T, seed = 123, itr = 10000,
+#     map_file = KRSA_file, cov_file = processed_uka_map) -> fin
+
+
+# View the Z score table
+kable(head(fin$KRSA_Table,25), digits = 3)
+
+# to save file
+fin$KRSA_Table %>% write_delim(paste0(EAB_directory_output_comparison_per,Sys.Date(),"-","acrossChip_KRSA_FullTable_Individual_comp1.txt"), delim = "\t")
+      
+
+# find top and bottom kinases
+bothways <- c(pull(head(fin$KRSA_Table, 10), Kinase), pull(tail(fin$KRSA_Table, 10), Kinase))
+
+# Use these kinase to generate histogram plots for each selected kinase
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, bothways)
+
+
+# For parallel computing, load the furrr package:
+# opens multiple R sessions to run faster
+plan(multisession)
+
+# Run the KRSA function across the different sets of peptides using the furrr package for parallel computing
+future_map(sigPeps_total, krsa) -> mutiple_krsa_outputs
+
+
+# For none parallel computing:
+# Run KRSA function across the different sets of peptides
+#map(sigPeps_total, krsa) -> mutiple_krsa_outputs
+
+# Tidy output
+df <- data.frame(matrix(unlist(mutiple_krsa_outputs), ncol = max(lengths(mutiple_krsa_outputs)), byrow = TRUE))
+df <- setNames(do.call(rbind.data.frame, mutiple_krsa_outputs), names(mutiple_krsa_outputs$meanLFC.0.2))
+
+df %>% rownames_to_column("method") %>% select(Kinase, Z, method) %>% 
+  mutate(method = str_extract(method, "\\w+\\.\\w+\\.\\w+")) %>% 
+  mutate(method = gsub("(^\\w+)[\\.]", "\\1>", method)) %>% 
+  mutate_if(is.numeric, round, 2) -> df
+
+df %>% 
+  pivot_wider(names_from = method, values_from = Z) -> df2
+  
+# Generates a table of the Z scores across the different sets of peptides
+# df2 %>% 
+#   gt() %>% tab_spanner_delim(delim = ">")
+
+# Creates an average Z score table using the across chip analysis
+df %>% 
+  filter(grepl("mean", method)) %>% 
+  select(Kinase, Z, method) %>% group_by(Kinase) %>% mutate(AvgZ = mean(Z)) -> AvgZTable
+
+# save file
+AvgZTable %>% write_delim(paste0(EAB_directory_output_comparison_per,Sys.Date(),"-","acrossChip_KRSA_Table_Indidivual_comp1.txt"), delim = "\t")
+
+# Creates an average Z score table using the within chip analysis
+df %>% 
+  filter(!grepl("mean", method)) %>% 
+  select(Kinase, Z, method) %>% group_by(Kinase) %>% mutate(AvgZ = mean(Z)) -> AvgZTable2
+
+# save file
+AvgZTable %>% write_delim(paste0(EAB_directory_output_comparison_per,Sys.Date(),"-","withinChip_KRSA_Table_Individual_comp1.txt"), delim = "\t")
+
+# Extract top kinases based on abs(Z) score
+krsa_top_hits(AvgZTable2, 2) -> kinases_hits
+
+#krsa_top_hits(AvgZTable2, 1.75)
+#krsa_top_hits(AvgZTable2, 1.5)
+
+# Show the number of peptides per each set in atable
+krsa_show_peptides(sigPeps_total)
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Z Scores Plot)
+
+We will plot the individual and averaged Z scores using both the across and within chip analyses.
+
+```{r customzscoresPlot, echo=F, warning=F, fig.align="center", fig.height=10,fig.width=8, cache=TRUE}
+
+
+# Generates Z scores waterfall plots
+#krsa_zscores_plot(AvgZTable)
+#krsa_zscores_plot(AvgZTable2)
+
+
+######################################################
+
+
+jfc_custom_krsa_zscores_plot <- function (Ztable) 
+{
+    Ztable %>% dplyr::filter(!Kinase %in% c("VRK2", "BARK1")) %>% 
+        dplyr::mutate(breaks = cut(abs(AvgZ), breaks = c(0, 1, 
+            1.5, 2, Inf), right = F, labels = c("Z <= 1", 
+            "1 >= Z < 1.5", "1.5 >= Z < 2", "Z >= 2"))) %>% 
+        ggplot2::ggplot() + ggplot2::geom_line(ggplot2::aes(Z, 
+        stats::reorder(Kinase, AvgZ)), alpha = 1/3) + ggplot2::geom_point(ggplot2::aes(Z, 
+        stats::reorder(Kinase, AvgZ)), color = "grey", 
+        size = 1) + ggplot2::geom_point(ggplot2::aes(AvgZ, stats::reorder(Kinase, 
+        AvgZ), color = breaks), size = 5) + ggplot2::geom_vline(xintercept = 0) +
+        ggplot2::geom_vline(xintercept = c(-1, -1.5, -2, 1, 1.5, 
+            2), linetype = "dashed") + ggplot2::scale_color_brewer(palette = "RdGy", direction = -1, 
+        drop = F, guide = ggplot2::guide_legend(reverse = TRUE, 
+            title = "")) + ggplot2::labs(x = "Z", 
+        y = "", shape = "cutoff") + ggplot2::theme(plot.title = ggplot2::element_text(size = 7), 
+        axis.text.y = ggplot2::element_text(size = 6)) + ggplot2::theme_bw()
+}
+
+
+#run within R
+
+jfc_custom_krsa_zscores_plot(AvgZTable)
+jfc_custom_krsa_zscores_plot(AvgZTable2)
+
+
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH individual kinases - Generate peacock plots
+
+```{r Peacock Plots-Individual Kinases, echo=F, warning=F, message=FALSE, fig.align="center", fig.height=8, fig.width=8, cache=TRUE}
+
+#This will change per run and creates the peacock plots for the individual kinases
+
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, c("ZAP70", "Syk", "FRK", "BLK", "Brk", "Src", "LTK", "Ron", "HER3", "Tyro3/Sky", "Ret", "Met", "Srm", "Fes", "HCK", "BTK", "IGF1R", "HER4", "FGFR1", "RYK", "Arg", "Yes", "Lck", "Abl", "HER2"))
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig1-ZAP70","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "ZAP70")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig2-Syk","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Syk")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig3-FRK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "FRK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig4-BLK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "BLK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig5-Brk","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Brk")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig6-Src","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Src")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig7-LTK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "LTK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig9-Ron","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Ron")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig10-HER3","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "HER3")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig11-Tyro3-Sky","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Tyro3/Sky")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig12-Ret","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Ret")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig13-Met","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Met")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig14-Srm","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Srm")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig15-Fes","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Fes")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig16-BTK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "BTK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig17-FGFR1","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "FGFR1")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig18-HCK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "HCK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig19-IGF1R","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "IGF1R")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig20-HER4","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "HER4")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig21-RYK","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "RYK")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig22-Yes","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Yes")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig23-Lck","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "HER4")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig24-Abl","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "Abl")
+dev.off()
+
+png(file = (paste0(EAB_directory_output_comparison, "Fig25-HER2","-",experiment_ID,".png")),width = 11250,height = 10000,units = "px",pointsize = 12,res = 7000)
+krsa_histogram_plot(fin$KRSA_Table, fin$count_mtx, "HER2")
+dev.off()
+```
+
+\newpage
+
+### RNAi Ugt1a1 vs RNAi VEH (Reverse KRSA Plot)
+
+We will use the reverse KRSA plot function, to plot the log2 fold chnage values for all peptides mapped to kinase hits. This will help us examine the activity of the kinase
+
+```{r perKRSArevKRSAPlot, echo=F, warning=F, fig.align="center", message = FALSE, fig.height=8, fig.width=8, cache=TRUE}
+
+# plot the reverse KRSA figure for top kinases to determine their activity levels
+#krsa_reverse_krsa_plot(chipCov, diff_df, kinases_hits, 0.2, byChip = F)
+
+krsa_reverse_krsa_plot(processed_uka_map, diff_df, kinases = kinases_of_interest, 0.2, byChip = F)
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+\newpage
+
+```{r printrevKRSAPlot, echo=F, warning=F, fig.align="center", message=FALSE, fig.height=8, fig.width=8, cache=TRUE}
+#auto export reverse krsa plot as PNG
+png(file = (paste0(EAB_directory_output_comparison,Sys.Date()," - ",experiment_ID," - ","reverse perkrsa plot"," - ",comparison,".png")),width = 10000,height = 10000,units = "px",pointsize = 12,res = 1200)
+krsa_reverse_krsa_plot(processed_uka_map, diff_df, kinases = kinases_of_interest, 0.2, byChip = F) +ylim(-1,3.1) +theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust = 1))
+#krsa_reverse_krsa_plot(chipCov, diff_df, kinases_hits, 0.2, byChip = F) + ylim(-1,3.1) #ylim tells it y axis range
+dev.off()
+```
+
+\newpage
+
+#### Session Info
+
+```{r}
+installed.packages()[names(sessionInfo()$otherPkgs), "Version"]
+```
