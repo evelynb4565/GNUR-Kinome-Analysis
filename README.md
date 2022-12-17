@@ -1,4 +1,4 @@
-# GNUR-Kinome-Analysis
+# GNUR-Kinome-Analysis and Lipidomics
 
 Files to reproduce results from kinome analysis for the following manuscript: "Suppressing hepatic UGT1A1 increases plasma bilirubin, lowers plasma urobilin, and improves fatty liver disease"
 
@@ -10,5 +10,7 @@ Kinase phylogeny trees were created using CORAL. Both the web-based version and 
 
   Website: http://phanstiel-lab.med.unc.edu/CORAL/
   Github: https://github.com/dphansti/CORAL
+  
+Lipidomics data is included in the Lipidomics folder. Normalized data and sample annotations used for LipidSig analysis are included as csv files. 
 
 Any inquires on how the data was processed or how to reproduce this analysis should be sent to: eaba240@uky.edu
